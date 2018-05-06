@@ -20,6 +20,7 @@ type leaf struct {
 	lastAccess int64
 }
 
+//  IndexOpts contains options for creating the index. Defaults will be set so it is perfectly fine to pass an empty struct.
 type IndexOpts struct {
 	maxIdle              int64
 	Dir                  string
@@ -30,6 +31,14 @@ type IndexOpts struct {
 	Logger               *log.Logger
 	BloomfilterSize      float64
 	BloomError           float64
+}
+
+// Index is an append-only key-value
+type Index interface {
+	Append(string, []byte) error
+	Read(string, func(io.Reader)) error
+	Exists(string) bool
+	Compact() error
 }
 
 type index struct {
@@ -98,7 +107,12 @@ func (i *index) findAllSegments() {
 	i.opts.Logger.Infof("Found %d segments", len(gzFiles)+len(datFiles))
 }
 
-func NewIndex(opts *IndexOpts) *index {
+// NewIndex creates a new index from the given options
+func New(opts *IndexOpts) Index {
+	return newIndex(opts)
+}
+
+func newIndex(opts *IndexOpts) *index {
 	opts.setDefaults()
 	os.MkdirAll(opts.Dir, os.ModePerm)
 	bf := bbloom.New(opts.BloomfilterSize, opts.BloomError)
@@ -114,7 +128,7 @@ func NewIndex(opts *IndexOpts) *index {
 	}()
 	go func() {
 		for {
-			<-time.After(i.opts.TimeToCompaction)
+			<-time.After(i.opts.CompactionInterval)
 			i.opts.Logger.Infof("Starting compaction...")
 			err := i.Compact()
 			if err != nil {
@@ -159,8 +173,8 @@ func (i *index) addLeaf(path string) (*leaf, error) {
 	return l, nil
 }
 
-// Write writes data to a segment.
-func (i *index) Write(path string, data []byte) error {
+// Append appends data to a segment.
+func (i *index) Append(path string, data []byte) error {
 	i.opts.Logger.Debugf("Attempted write for segment '%s'", path)
 	var (
 		l   *leaf

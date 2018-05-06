@@ -13,7 +13,7 @@ func TestIndex(t *testing.T) {
 	defer func() {
 		os.RemoveAll("./tests")
 	}()
-	i := NewIndex(&IndexOpts{
+	i := newIndex(&IndexOpts{
 		MaxSegmentIdlePeriod: time.Second,      //so everything is purged on manual cleanup
 		IndexCleanupInterval: time.Hour,        //so cleanup never actually runs automatically
 		TimeToCompaction:     time.Microsecond, //so everything is compacted at once
@@ -24,7 +24,7 @@ func TestIndex(t *testing.T) {
 			So(i.Exists("key"), ShouldBeFalse)
 		})
 		Convey("It should read and write to leafs correctly", func() {
-			So(i.Write("key", []byte("hello world")), ShouldBeNil)
+			So(i.Append("key", []byte("hello world")), ShouldBeNil)
 			So(i.Exists("key"), ShouldBeTrue)
 			err := i.Read("key", func(r io.Reader) {
 				b, err := ioutil.ReadAll(r)
