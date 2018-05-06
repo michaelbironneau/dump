@@ -1,21 +1,22 @@
 package dump
 
 import (
+	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
-	"compress/gzip"
-	"errors"
 )
 
 const (
 	CompressedExt = ".gz"
-	NormalExt = ".dat"
+	NormalExt     = ".dat"
 )
 
 var (
 	ErrImmutableSegment = errors.New("the segment has been compressed and is now immutable")
 )
+
 // extension returns the desired extension for new segment. If already compressed
 // it returns true (exists), the filename with ext, and no error. Otherwise it
 // returns false (don't know if exists), filename with ext, and error (maybe).
@@ -40,7 +41,7 @@ func NewSegment(path string) (Segment, error) {
 			return nil, err
 		}
 	}
-	fAppend, err := os.OpenFile(filename, os.O_APPEND | os.O_WRONLY | os.O_CREATE, 0600)
+	fAppend, err := os.OpenFile(filename, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -55,18 +56,18 @@ func NewSegment(path string) (Segment, error) {
 			return nil, err
 		}
 	}
-	return &segment {
-		path: path,
+	return &segment{
+		path:     path,
 		filename: filename,
 		appender: fAppend,
 		rFile:    fRead,
-		gReader: cReader,
+		gReader:  cReader,
 	}, nil
 }
 
 //  Segment is essentially an append-only file. Not safe for concurrent use by
 //  multiple goroutines.
-type Segment interface{
+type Segment interface {
 	Append([]byte) error
 	Read(func(io.Reader)) error
 	Compress() error
@@ -74,7 +75,7 @@ type Segment interface{
 }
 
 type segment struct {
-	path string
+	path     string
 	filename string
 	appender *os.File
 	rFile    *os.File
@@ -86,16 +87,19 @@ type segment struct {
 // time it is needed.
 // Warning: A segment that has been compressed is immutable thereafter.
 func (s *segment) Compress() error {
+	if s.gReader != nil {
+		return ErrImmutableSegment // segment is already compressed and is immutable
+	}
 	s.appender.Close()
 	if s.gReader != nil {
 		s.gReader.Close()
 	}
-	f, err := os.OpenFile(s.path + CompressedExt, os.O_CREATE | os.O_WRONLY, 0600)
+	f, err := os.OpenFile(s.path+CompressedExt, os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
 	gWriter := gzip.NewWriter(f)
-	_, err = s.rFile.Seek(0,0)
+	_, err = s.rFile.Seek(0, 0)
 	if err != nil {
 		return err
 	}
@@ -108,7 +112,9 @@ func (s *segment) Compress() error {
 		return err
 	}
 	gWriter.Close()
-	return nil
+	s.rFile.Close()
+	s.appender.Close()
+	return os.Remove(s.filename)
 }
 
 //  Append appends the given content to the segment. It should
@@ -134,7 +140,7 @@ func (s *segment) Read(f func(io.Reader)) error {
 	} else {
 		f(s.rFile)
 	}
-	_, err = s.rFile.Seek(0,0)
+	_, err = s.rFile.Seek(0, 0)
 	if err != nil {
 		return err
 	}
