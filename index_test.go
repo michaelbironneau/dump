@@ -58,3 +58,79 @@ func TestIndex(t *testing.T) {
 		})
 	})
 }
+
+func BenchmarkWrite(b *testing.B){
+	b.StopTimer()
+	s, err := NewSegment("./benchmark")
+	if err != nil {
+		panic(err)
+	}
+	appendItem := "{\"time\":12345678, \"value\": 123.123, \"code\": \"l123\", \"variable\": \"asdfasdf\"}"
+	b.StartTimer()
+	for i := 0; i< b.N; i++ {
+		err := s.Append([]byte(appendItem))
+		if err != nil {
+			panic(err)
+		}
+	}
+	s.Close()
+	os.Remove("./benchmark.dat")
+}
+
+func BenchmarkRead(b *testing.B){
+	b.StopTimer()
+	s, err := NewSegment("./benchmark")
+	if err != nil {
+		panic(err)
+	}
+	appendItem := "{\"time\":12345678, \"value\": 123.123, \"code\": \"l123\", \"variable\": \"asdfasdf\"}"
+	b.StartTimer()
+	for i := 0; i<1000; i++ {
+		if err := s.Append([]byte(appendItem)); err != nil {
+			panic(err)
+		}
+	}
+	for i := 0; i< b.N; i++ {
+		err = s.Read(func(reader io.Reader) {
+			_, errI := ioutil.ReadAll(reader)
+			if errI != nil {
+				panic(errI)
+			}
+		})
+	}
+	s.Close()
+	os.Remove("./benchmark.dat")
+}
+
+func BenchmarkCompressedRead(b *testing.B){
+	b.StopTimer()
+	s, err := NewSegment("./benchmark")
+	if err != nil {
+		panic(err)
+	}
+	appendItem := "{\"time\":12345678, \"value\": 123.123, \"code\": \"l123\", \"variable\": \"asdfasdf\"}"
+	for i := 0; i<1000; i++ {
+		if err := s.Append([]byte(appendItem)); err != nil {
+			panic(err)
+		}
+	}
+	err = s.Compress()
+	if err != nil {
+		panic(err)
+	}
+	s, err = NewSegment("./benchmark")
+	if err != nil {
+		panic(err)
+	}
+	b.StartTimer()
+	for i := 0; i< b.N; i++ {
+		err = s.Read(func(reader io.Reader) {
+			_, errI := ioutil.ReadAll(reader)
+			if errI != nil {
+				panic(errI)
+			}
+		})
+	}
+	s.Close()
+	os.Remove("./benchmark.gz")
+}
