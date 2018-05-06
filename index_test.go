@@ -2,11 +2,11 @@ package dump
 
 import (
 	. "github.com/smartystreets/goconvey/convey"
-	"testing"
-	"time"
 	"io"
 	"io/ioutil"
 	"os"
+	"testing"
+	"time"
 )
 
 func TestIndex(t *testing.T) {
@@ -14,9 +14,9 @@ func TestIndex(t *testing.T) {
 		os.RemoveAll("./tests")
 	}()
 	i := NewIndex(&IndexOpts{
-		MaxSegmentIdlePeriod: time.Second, //so everything is purged on manual cleanup
-		IndexCleanupInterval: time.Hour,   //so cleanup never actually runs automatically
-		TimeToCompaction: time.Microsecond, //so everything is compacted at once
+		MaxSegmentIdlePeriod: time.Second,      //so everything is purged on manual cleanup
+		IndexCleanupInterval: time.Hour,        //so cleanup never actually runs automatically
+		TimeToCompaction:     time.Microsecond, //so everything is compacted at once
 		Dir:                  "./tests",
 	})
 	Convey("Given an index", t, func() {
@@ -49,7 +49,7 @@ func TestIndex(t *testing.T) {
 			So(err, ShouldBeNil)
 			_, err = os.Stat("./tests/key.gz")
 			So(err, ShouldBeNil)
-			err = i.Read("key", func(r io.Reader){
+			err = i.Read("key", func(r io.Reader) {
 				b, err := ioutil.ReadAll(r)
 				So(err, ShouldBeNil)
 				So(string(b), ShouldEqual, "hello world")
