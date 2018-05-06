@@ -24,6 +24,7 @@ type IndexOpts struct {
 	maxIdle              int64
 	Dir                  string
 	IndexCleanupInterval time.Duration
+	CompactionInterval   time.Duration
 	MaxSegmentIdlePeriod time.Duration
 	TimeToCompaction     time.Duration
 	Logger               *log.Logger
@@ -66,6 +67,9 @@ func (o *IndexOpts) setDefaults() {
 	if o.TimeToCompaction == 0 {
 		o.TimeToCompaction = time.Hour * (24*14 + 1) //compact segments that are at least 14 days old
 	}
+	if o.CompactionInterval == 0 {
+		o.CompactionInterval = time.Hour*1
+	}
 }
 
 //  findAllSegments populates the bloom filter from list of files
@@ -104,8 +108,18 @@ func NewIndex(opts *IndexOpts) *index {
 	go func() {
 		for {
 			<-time.After(i.opts.IndexCleanupInterval)
-			i.opts.Logger.Infof("starting cleanup...")
+			i.opts.Logger.Infof("Starting cleanup...")
 			i.cleanup()
+		}
+	}()
+	go func(){
+		for {
+			<- time.After(i.opts.TimeToCompaction)
+			i.opts.Logger.Infof("Starting compaction...")
+			err := i.Compact()
+			if err != nil {
+				i.opts.Logger.Error(err)
+			}
 		}
 	}()
 	return i
