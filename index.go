@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync/atomic"
 	"bytes"
+	"github.com/labstack/gommon/log"
 )
 
 type leaf struct {
@@ -23,6 +24,7 @@ type IndexOpts struct {
 	Dir string
 	IndexCleanupInterval time.Duration
 	MaxSegmentIdlePeriod time.Duration
+	Logger *log.Logger
 	BloomfilterSize float64
 	BloomError float64
 }
@@ -55,12 +57,17 @@ func (o *IndexOpts) setDefaults(){
 	if o.BloomError == 0 {
 		o.BloomError = 0.01
 	}
+	if o.Logger == nil {
+		o.Logger = log.New("index")
+		o.Logger.SetLevel(log.INFO)
+	}
 }
 
 //  findAllSegments populates the bloom filter from list of files
 //  Should only be run concurrently on one goroutine, and only assuming that
 //  no writers are active.
 func (i *index) findAllSegments() {
+	i.opts.Logger.Infof("Searching for segments...")
 	i.bf.Clear()
 	gzFiles, err := filepath.Glob(i.opts.Dir + "*" + CompressedExt)
 	if err != nil {
@@ -79,6 +86,7 @@ func (i *index) findAllSegments() {
 		fName = fName[0:len(fName)-len(NormalExt)] //return filename without path or extension
 		i.bf.Add([]byte(fName))
 	}
+	i.opts.Logger.Infof("Found %d segments", len(gzFiles)+len(datFiles))
 }
 
 func NewIndex(opts *IndexOpts) *index {
@@ -91,6 +99,7 @@ func NewIndex(opts *IndexOpts) *index {
 	go func(){
 		for {
 			<- time.After(i.opts.IndexCleanupInterval)
+			i.opts.Logger.Infof("starting cleanup...")
 			i.cleanup()
 		}
 	}()
@@ -102,13 +111,16 @@ func (i *index) cleanup() {
 	i.Lock()
 	defer i.Unlock()
 	tNow := time.Now().Unix()
+	removed := 0
 	for path, l := range i.leafs {
 		lastAccessed := atomic.LoadInt64(&l.lastAccess)
 		if lastAccessed + i.opts.maxIdle < tNow {
 			l.segment.Close()
 			delete(i.leafs, path)
+			removed++
 		}
 	}
+	i.opts.Logger.Infof("Removed %d segments", removed)
 }
 
 func (i *index) addLeaf(path string) (*leaf, error) {
@@ -124,11 +136,13 @@ func (i *index) addLeaf(path string) (*leaf, error) {
 	i.leafs[path] = l
 	i.Unlock()
 	i.bf.Add([]byte(path))
+	i.opts.Logger.Debugf("Added new leaf '%s'", path)
 	return l, nil
 }
 
 // Write writes data to a segment.
 func (i *index) Write(path string, data []byte) error {
+	i.opts.Logger.Debugf("Attempted write for segment '%s'", path)
 	var (
 		l *leaf
 		ok bool
@@ -142,6 +156,7 @@ func (i *index) Write(path string, data []byte) error {
 		}
 	}
 	atomic.StoreInt64(&l.lastAccess, time.Now().Unix())
+	i.opts.Logger.Debugf("Updated last access time for segment '%s'", path)
 	l.a.Lock()
 	defer l.a.Unlock()
 	return l.segment.Append(data)
@@ -149,6 +164,7 @@ func (i *index) Write(path string, data []byte) error {
 
 // Read applies a func to the file. Caller should not retain reference to io.Reader.
 func (i *index) Read(path string, f func(io.Reader)) error{
+	i.opts.Logger.Debugf("Attempted read for segment '%s'", path)
 	if !i.Exists(path){
 		//if segment doesn't exist and we can short-circuit, then do that
 		var r = bytes.NewBufferString("")
@@ -168,6 +184,7 @@ func (i *index) Read(path string, f func(io.Reader)) error{
 		}
 	}
 	atomic.StoreInt64(&l.lastAccess, time.Now().Unix())
+	i.opts.Logger.Debugf("Updated last access time for segment '%s'", path)
 	l.r.Lock()
 	err = l.segment.Read(f)
 	l.r.Unlock()
