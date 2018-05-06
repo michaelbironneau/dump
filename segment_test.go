@@ -13,9 +13,7 @@ func TestSegment(t *testing.T) {
 	defer func(){
 		//cleanup
 		s.Close()
-		os.Remove("./test/key.dat")
-		os.Remove("./test/key.gz")
-		os.Remove("./test")
+		os.RemoveAll("./test")
 	}()
 	Convey("When creating a new segment", t, func() {
 		Convey("It should create the file correctly", func(){

@@ -13,8 +13,9 @@ const (
 	NormalExt = ".dat"
 )
 
-var ErrImmutableSegment = errors.New("the segment has been compressed and is now immutable")
-
+var (
+	ErrImmutableSegment = errors.New("the segment has been compressed and is now immutable")
+)
 // extension returns the desired extension for new segment. If already compressed
 // it returns true (exists), the filename with ext, and no error. Otherwise it
 // returns false (don't know if exists), filename with ext, and error (maybe).
