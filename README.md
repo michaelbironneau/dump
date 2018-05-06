@@ -17,9 +17,9 @@ It has some interesting features that may or may not work for you:
 ## Example
 
 ```go
-i := NewIndex(&IndexOpts{})
+i := New(&IndexOpts{})
 
-i.Write("key", []byte("hello world"))
+i.Append("key", []byte("hello world"))
 fmt.Println(i.Exists("key")) // true
 i.Read("key", func(r io.Reader) {
 				b, _ := ioutil.ReadAll(r)
