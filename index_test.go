@@ -7,26 +7,30 @@ import (
 	"os"
 	"testing"
 	"time"
+	"github.com/labstack/gommon/log"
 )
 
 func TestIndex(t *testing.T) {
 	defer func() {
 		os.RemoveAll("./tests")
 	}()
+	logger := log.New("test")
+	logger.SetLevel(log.DEBUG)
 	i := newIndex(&IndexOpts{
 		MaxSegmentIdlePeriod: time.Second,      //so everything is purged on manual cleanup
 		IndexCleanupInterval: time.Hour,        //so cleanup never actually runs automatically
 		TimeToCompaction:     time.Microsecond, //so everything is compacted at once
 		Dir:                  "./tests",
+		Logger: logger,
 	})
 	Convey("Given an index", t, func() {
 		Convey("It should say when a segment definitely doesn't exist", func() {
-			So(i.Exists("key"), ShouldBeFalse)
+			So(i.Exists("my/key"), ShouldBeFalse)
 		})
 		Convey("It should read and write to leafs correctly", func() {
-			So(i.Append("key", []byte("hello world")), ShouldBeNil)
-			So(i.Exists("key"), ShouldBeTrue)
-			err := i.Read("key", func(r io.Reader) {
+			So(i.Append("my/key", []byte("hello world")), ShouldBeNil)
+			So(i.Exists("my/key"), ShouldBeTrue)
+			err := i.Read("my/key", func(r io.Reader) {
 				b, err := ioutil.ReadAll(r)
 				So(err, ShouldBeNil)
 				So(string(b), ShouldEqual, "hello world")
@@ -47,9 +51,9 @@ func TestIndex(t *testing.T) {
 			So(i.leafs, ShouldBeEmpty)
 			err := i.Compact()
 			So(err, ShouldBeNil)
-			_, err = os.Stat("./tests/key.gz")
+			_, err = os.Stat("./tests/my/key.gz")
 			So(err, ShouldBeNil)
-			err = i.Read("key", func(r io.Reader) {
+			err = i.Read("my/key", func(r io.Reader) {
 				b, err := ioutil.ReadAll(r)
 				So(err, ShouldBeNil)
 				So(string(b), ShouldEqual, "hello world")

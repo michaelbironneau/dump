@@ -42,7 +42,7 @@ type Index interface {
 }
 
 type index struct {
-	sync.Mutex
+	sync.RWMutex
 	opts  *IndexOpts
 	bf    *bbloom.Bloom
 	leafs map[string]*leaf
@@ -84,27 +84,42 @@ func (o *IndexOpts) setDefaults() {
 //  findAllSegments populates the bloom filter from list of files
 //  Should only be run concurrently on one goroutine, and only assuming that
 //  no writers are active.
-func (i *index) findAllSegments() {
+func (i *index) findAllSegments() error {
 	i.opts.Logger.Infof("Searching for segments...")
 	i.bf.Clear()
-	gzFiles, err := filepath.Glob(i.opts.Dir + "*" + CompressedExt)
+	gzFiles := make([]string, 0, 0)
+	datFiles := make([]string, 0, 0)
+	err := filepath.Walk(i.opts.Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir(){
+			return nil
+		}
+		if filepath.Ext(path) == CompressedExt {
+			gzFiles = append(gzFiles, path)
+		} else if filepath.Ext(path) == NormalExt {
+			datFiles = append(datFiles, path)
+		}
+		return nil
+	})
 	if err != nil {
-		panic(err) //Glob only returns errors if pattern is malformed
+		return err
 	}
 	for _, f := range gzFiles {
 		fName := f[len(i.opts.Dir) : len(f)-len(CompressedExt)] //return filename without path or extension
 		i.bf.Add([]byte(fName))
 	}
-	datFiles, err := filepath.Glob(i.opts.Dir + "*" + NormalExt)
-	if err != nil {
-		panic(err) //Glob only returns errors if pattern is malformed
-	}
 	for _, f := range datFiles {
-		fName := filepath.Base(f)
+		fName, err := filepath.Rel(i.opts.Dir, f)
+		if err != nil {
+			panic(err)
+		}
 		fName = fName[0 : len(fName)-len(NormalExt)] //return filename without path or extension
 		i.bf.Add([]byte(fName))
 	}
 	i.opts.Logger.Infof("Found %d segments", len(gzFiles)+len(datFiles))
+	return nil
 }
 
 // NewIndex creates a new index from the given options
@@ -181,7 +196,9 @@ func (i *index) Append(path string, data []byte) error {
 		ok  bool
 		err error
 	)
+	i.RLock()
 	l, ok = i.leafs[path]
+	i.RUnlock()
 	if !ok {
 		l, err = i.addLeaf(path)
 		if err != nil {
@@ -209,7 +226,9 @@ func (i *index) Read(path string, f func(io.Reader)) error {
 		ok  bool
 		err error
 	)
+	i.RLock()
 	l, ok = i.leafs[path]
+	i.RUnlock()
 	if !ok {
 		l, err = i.addLeaf(path)
 		if err != nil {
@@ -234,10 +253,21 @@ func (i *index) Exists(path string) bool {
 //  whether it gets compacted property or not.
 func (i *index) Compact() error {
 	i.opts.Logger.Infof("Searching for segments to compact...")
-	datFiles, err := filepath.Glob(i.opts.Dir + "*" + NormalExt)
-	if err != nil {
-		panic(err) //Glob only returns errors if pattern is malformed
-	}
+	datFiles := make([]string, 0, 0)
+	filepath.Walk(i.opts.Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			i.opts.Logger.Infof("error walking compaction path: %v", err)
+			return nil
+		}
+		if info.IsDir(){
+			return nil
+		}
+		if filepath.Ext(path) == NormalExt {
+			datFiles = append(datFiles, path)
+		}
+		return nil
+	})
+	i.opts.Logger.Debugf("Found %d uncompressed files", len(datFiles))
 	for _, f := range datFiles {
 		lastAccessed, err := atime.Stat(f)
 		i.opts.Logger.Debugf("Found segment '%s' with last accessed time %v", f, lastAccessed.UTC())
@@ -247,7 +277,11 @@ func (i *index) Compact() error {
 		if lastAccessed.After(time.Now().Add(-1 * i.opts.TimeToCompaction)) {
 			continue //don't compact recently used segments
 		}
-		fName := filepath.Base(f)
+		fName, err := filepath.Rel(i.opts.Dir, f)
+		if err != nil {
+			i.opts.Logger.Errorf("file '%s' disappeared from underneath compacter! %v", f, err)
+			return err
+		}
 		fName = fName[0 : len(fName)-len(NormalExt)] //return filename without path or extension
 		i.opts.Logger.Debugf("Compacting segment '%s'", fName)
 		i.Lock()
