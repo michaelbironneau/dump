@@ -33,11 +33,16 @@ type IndexOpts struct {
 	BloomError           float64
 }
 
+type IndexStats struct {
+	OpenSegments int64 `json:"open_segments"`
+}
+
 // Index is an append-only key-value
 type Index interface {
 	Append(string, []byte) error
 	Read(string, func(io.Reader)) error
 	Exists(string) bool
+	Stats() IndexStats
 	Compact() error
 }
 
@@ -45,6 +50,7 @@ type index struct {
 	sync.RWMutex
 	opts  *IndexOpts
 	bf    *bbloom.Bloom
+	stats IndexStats
 	leafs map[string]*leaf
 }
 
@@ -127,6 +133,10 @@ func New(opts *IndexOpts) Index {
 	return newIndex(opts)
 }
 
+func (i *index) Stats() IndexStats {
+	return i.stats
+}
+
 func newIndex(opts *IndexOpts) *index {
 	opts.setDefaults()
 	os.MkdirAll(opts.Dir, os.ModePerm)
@@ -168,6 +178,7 @@ func (i *index) cleanup() {
 			removed++
 		}
 	}
+	atomic.StoreInt64(&i.stats.OpenSegments, int64(len(i.leafs)))
 	i.opts.Logger.Infof("Removed %d segments", removed)
 }
 
@@ -182,6 +193,7 @@ func (i *index) addLeaf(path string) (*leaf, error) {
 	}
 	i.Lock()
 	i.leafs[path] = l
+	atomic.StoreInt64(&i.stats.OpenSegments, int64(len(i.leafs)))
 	i.Unlock()
 	i.bf.Add([]byte(path))
 	i.opts.Logger.Debugf("Added new leaf '%s'", path)
