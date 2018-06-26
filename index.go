@@ -22,17 +22,17 @@ type leaf struct {
 
 //  IndexOpts contains options for creating the index. Defaults will be set so it is perfectly fine to pass an empty struct.
 type IndexOpts struct {
-	maxIdle              int64
-	Dir                  string
-	IndexCleanupInterval time.Duration
-	CompactionInterval   time.Duration
-	MaxSegmentIdlePeriod time.Duration
-	TimeToCompaction     time.Duration
-	RetentionPeriod      time.Duration
+	maxIdle                int64
+	Dir                    string
+	IndexCleanupInterval   time.Duration
+	CompactionInterval     time.Duration
+	MaxSegmentIdlePeriod   time.Duration
+	TimeToCompaction       time.Duration
+	RetentionPeriod        time.Duration
 	RetentionCheckInterval time.Duration
-	Logger               *log.Logger
-	BloomfilterSize      float64
-	BloomError           float64
+	Logger                 *log.Logger
+	BloomfilterSize        float64
+	BloomError             float64
 }
 
 type IndexStats struct {
@@ -72,7 +72,7 @@ func (o *IndexOpts) setDefaults() {
 		o.IndexCleanupInterval = time.Minute
 	}
 	if o.RetentionPeriod == 0 {
-		o.RetentionPeriod = time.Hour*24*30*3 //3 months
+		o.RetentionPeriod = time.Hour * 24 * 30 * 3 //3 months
 	}
 	if o.BloomfilterSize == 0 {
 		o.BloomfilterSize = 1 << 16 //65k items
@@ -107,7 +107,7 @@ func (i *index) findAllSegments() error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir(){
+		if info.IsDir() {
 			return nil
 		}
 		if filepath.Ext(path) == CompressedExt {
@@ -169,7 +169,7 @@ func newIndex(opts *IndexOpts) *index {
 			}
 		}
 	}()
-	go func(){
+	go func() {
 		for {
 			<-time.After(i.opts.RetentionCheckInterval)
 			i.opts.Logger.Infof("Checking for old segments to delete...")
@@ -289,7 +289,7 @@ func (i *index) Compact() error {
 			i.opts.Logger.Infof("error walking compaction path: %v", err)
 			return nil
 		}
-		if info.IsDir(){
+		if info.IsDir() {
 			return nil
 		}
 		if filepath.Ext(path) == NormalExt {
@@ -352,7 +352,7 @@ func (i *index) ApplyRetentionPolicy() error {
 			i.opts.Logger.Infof("error walking path: %v", err)
 			return nil
 		}
-		if info.IsDir(){
+		if info.IsDir() {
 			return nil
 		}
 		if filepath.Ext(path) == CompressedExt {
@@ -386,14 +386,14 @@ func (i *index) ApplyRetentionPolicy() error {
 			//very, very unlikely. Otherwise last access time would be more recent.
 			i.opts.Logger.Warnf("Found segment to delete '%s' in cache but expected it to have been evicted", fName)
 			delete(i.leafs, fName)
-		} else {
-			i.opts.Logger.Debugf("Deleting file '%s'", f)
-			p := filepath.Join(i.opts.Dir, fName)
-			err := os.Remove(p + CompressedExt)
-			if err != nil {
-				i.opts.Logger.Warnf("Failed to delete file %s: %v", p + CompressedExt, err) //  this shouldn't be fatal
-			}
 		}
+		i.opts.Logger.Debugf("Deleting file '%s'", f)
+		p := filepath.Join(i.opts.Dir, fName)
+		err = os.Remove(p + CompressedExt)
+		if err != nil {
+			i.opts.Logger.Warnf("Failed to delete file %s: %v", p+CompressedExt, err) //  this shouldn't be fatal
+		}
+
 		i.Unlock()
 	}
 	return nil

@@ -1,13 +1,13 @@
 package dump
 
 import (
+	"github.com/labstack/gommon/log"
 	. "github.com/smartystreets/goconvey/convey"
 	"io"
 	"io/ioutil"
 	"os"
 	"testing"
 	"time"
-	"github.com/labstack/gommon/log"
 )
 
 func TestIndex(t *testing.T) {
@@ -20,9 +20,9 @@ func TestIndex(t *testing.T) {
 		MaxSegmentIdlePeriod: time.Second,      //so everything is purged on manual cleanup
 		IndexCleanupInterval: time.Hour,        //so cleanup never actually runs automatically
 		TimeToCompaction:     time.Microsecond, //so everything is compacted at once
-		RetentionPeriod: time.Microsecond,
+		RetentionPeriod:      time.Microsecond,
 		Dir:                  "./tests",
-		Logger: logger,
+		Logger:               logger,
 	})
 	Convey("Given an index", t, func() {
 		Convey("It should say when a segment definitely doesn't exist", func() {
@@ -62,18 +62,20 @@ func TestIndex(t *testing.T) {
 			So(err, ShouldBeNil)
 		})
 		Convey("It should apply the retention period correctly", func() {
-			time.Sleep(time.Millisecond*10)
+			time.Sleep(time.Millisecond * 10)
 			err := i.ApplyRetentionPolicy()
 			So(err, ShouldBeNil)
 			So(i.leafs, ShouldBeEmpty)
 			//So(i.Exists("my/key"), ShouldBeFalse)  // Because this uses a bloom filter, it will not be possible to satisfy this unless the service is restarted
 			_, err = os.Stat("./tests/my/key.gz")
+			So(err, ShouldNotBeNil)
+			logger.Info(err)
 			So(os.IsNotExist(err), ShouldBeTrue)
 		})
 	})
 }
 
-func BenchmarkWrite(b *testing.B){
+func BenchmarkWrite(b *testing.B) {
 	b.StopTimer()
 	s, err := NewSegment("./benchmark")
 	if err != nil {
@@ -81,7 +83,7 @@ func BenchmarkWrite(b *testing.B){
 	}
 	appendItem := "{\"time\":12345678, \"value\": 123.123, \"code\": \"l123\", \"variable\": \"asdfasdf\"}"
 	b.StartTimer()
-	for i := 0; i< b.N; i++ {
+	for i := 0; i < b.N; i++ {
 		err := s.Append([]byte(appendItem))
 		if err != nil {
 			panic(err)
@@ -91,7 +93,7 @@ func BenchmarkWrite(b *testing.B){
 	os.Remove("./benchmark.dat")
 }
 
-func BenchmarkRead(b *testing.B){
+func BenchmarkRead(b *testing.B) {
 	b.StopTimer()
 	s, err := NewSegment("./benchmark")
 	if err != nil {
@@ -99,12 +101,12 @@ func BenchmarkRead(b *testing.B){
 	}
 	appendItem := "{\"time\":12345678, \"value\": 123.123, \"code\": \"l123\", \"variable\": \"asdfasdf\"}"
 	b.StartTimer()
-	for i := 0; i<1000; i++ {
+	for i := 0; i < 1000; i++ {
 		if err := s.Append([]byte(appendItem)); err != nil {
 			panic(err)
 		}
 	}
-	for i := 0; i< b.N; i++ {
+	for i := 0; i < b.N; i++ {
 		err = s.Read(func(reader io.Reader) {
 			_, errI := ioutil.ReadAll(reader)
 			if errI != nil {
@@ -116,14 +118,14 @@ func BenchmarkRead(b *testing.B){
 	os.Remove("./benchmark.dat")
 }
 
-func BenchmarkCompressedRead(b *testing.B){
+func BenchmarkCompressedRead(b *testing.B) {
 	b.StopTimer()
 	s, err := NewSegment("./benchmark")
 	if err != nil {
 		panic(err)
 	}
 	appendItem := "{\"time\":12345678, \"value\": 123.123, \"code\": \"l123\", \"variable\": \"asdfasdf\"}"
-	for i := 0; i<1000; i++ {
+	for i := 0; i < 1000; i++ {
 		if err := s.Append([]byte(appendItem)); err != nil {
 			panic(err)
 		}
@@ -137,7 +139,7 @@ func BenchmarkCompressedRead(b *testing.B){
 		panic(err)
 	}
 	b.StartTimer()
-	for i := 0; i< b.N; i++ {
+	for i := 0; i < b.N; i++ {
 		err = s.Read(func(reader io.Reader) {
 			_, errI := ioutil.ReadAll(reader)
 			if errI != nil {
