@@ -387,7 +387,7 @@ func (i *index) ApplyRetentionPolicy() error {
 			i.opts.Logger.Warnf("Found segment to delete '%s' in cache but expected it to have been evicted", fName)
 			delete(i.leafs, fName)
 		}
-		i.opts.Logger.Debugf("Deleting file '%s'", f)
+		i.opts.Logger.Infof("Deleting file '%s'", f)
 		p := filepath.Join(i.opts.Dir, fName)
 		err = os.Remove(p + CompressedExt)
 		if err != nil {
