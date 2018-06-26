@@ -20,6 +20,7 @@ func TestIndex(t *testing.T) {
 		MaxSegmentIdlePeriod: time.Second,      //so everything is purged on manual cleanup
 		IndexCleanupInterval: time.Hour,        //so cleanup never actually runs automatically
 		TimeToCompaction:     time.Microsecond, //so everything is compacted at once
+		RetentionPeriod: time.Microsecond,
 		Dir:                  "./tests",
 		Logger: logger,
 	})
@@ -59,6 +60,15 @@ func TestIndex(t *testing.T) {
 				So(string(b), ShouldEqual, "hello world")
 			})
 			So(err, ShouldBeNil)
+		})
+		Convey("It should apply the retention period correctly", func() {
+			time.Sleep(time.Millisecond*10)
+			err := i.ApplyRetentionPolicy()
+			So(err, ShouldBeNil)
+			So(i.leafs, ShouldBeEmpty)
+			So(i.Exists("my/key"), ShouldBeFalse)
+			_, err = os.Stat("./tests/my/key.gz")
+			So(os.IsNotExist(err), ShouldBeTrue)
 		})
 	})
 }

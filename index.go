@@ -28,6 +28,8 @@ type IndexOpts struct {
 	CompactionInterval   time.Duration
 	MaxSegmentIdlePeriod time.Duration
 	TimeToCompaction     time.Duration
+	RetentionPeriod      time.Duration
+	RetentionCheckInterval time.Duration
 	Logger               *log.Logger
 	BloomfilterSize      float64
 	BloomError           float64
@@ -69,6 +71,9 @@ func (o *IndexOpts) setDefaults() {
 	if o.IndexCleanupInterval == 0 {
 		o.IndexCleanupInterval = time.Minute
 	}
+	if o.RetentionPeriod == 0 {
+		o.RetentionPeriod = time.Hour*24*30*3 //3 months
+	}
 	if o.BloomfilterSize == 0 {
 		o.BloomfilterSize = 1 << 16 //65k items
 	}
@@ -84,6 +89,9 @@ func (o *IndexOpts) setDefaults() {
 	}
 	if o.CompactionInterval == 0 {
 		o.CompactionInterval = time.Hour * 1
+	}
+	if o.RetentionCheckInterval == 0 {
+		o.RetentionCheckInterval = time.Hour * 12
 	}
 }
 
@@ -156,6 +164,16 @@ func newIndex(opts *IndexOpts) *index {
 			<-time.After(i.opts.CompactionInterval)
 			i.opts.Logger.Infof("Starting compaction...")
 			err := i.Compact()
+			if err != nil {
+				i.opts.Logger.Error(err)
+			}
+		}
+	}()
+	go func(){
+		for {
+			<-time.After(i.opts.RetentionCheckInterval)
+			i.opts.Logger.Infof("Checking for old segments to delete...")
+			err := i.ApplyRetentionPolicy()
 			if err != nil {
 				i.opts.Logger.Error(err)
 			}
@@ -316,6 +334,64 @@ func (i *index) Compact() error {
 			err = s.Compress()
 			if err != nil {
 				return err
+			}
+		}
+		i.Unlock()
+	}
+	return nil
+}
+
+//  ApplyRetentionPolicy checks for any old segments and deletes them.
+//  Only previously compacted segments are eligible for deletion. This ensures that if the retention period is set
+//  to be shorter than the compaction period, then the compaction period will be used as an effective retention period.
+func (i *index) ApplyRetentionPolicy() error {
+	i.opts.Logger.Infof("Searching for segments to remove...")
+	datFiles := make([]string, 0, 0)
+	filepath.Walk(i.opts.Dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			i.opts.Logger.Infof("error walking path: %v", err)
+			return nil
+		}
+		if info.IsDir(){
+			return nil
+		}
+		if filepath.Ext(path) == CompressedExt {
+			datFiles = append(datFiles, path)
+		}
+		return nil
+	})
+	i.opts.Logger.Debugf("Found %d eligible files", len(datFiles))
+	for _, f := range datFiles {
+		lastAccessed, err := atime.Stat(f)
+		i.opts.Logger.Debugf("Found segment '%s' with last accessed time %v", f, lastAccessed.UTC())
+		if err != nil {
+			return err
+		}
+		if lastAccessed.After(time.Now().Add(-1 * i.opts.RetentionPeriod)) {
+			continue //don't compact recently used segments
+		}
+		fName, err := filepath.Rel(i.opts.Dir, f)
+		if err != nil {
+			i.opts.Logger.Errorf("file '%s' disappeared from underneath retention policy applier! %v", f, err)
+			return err
+		}
+		fName = fName[0 : len(fName)-len(CompressedExt)] //return filename without path or extension
+		i.opts.Logger.Debugf("Removing segment '%s'", fName)
+		i.Lock()
+		if i.leafs[fName] != nil {
+			l := i.leafs[fName]
+			if l.segment != nil {
+				l.segment.Close()
+			}
+			//very, very unlikely. Otherwise last access time would be more recent.
+			i.opts.Logger.Warnf("Found segment to delete '%s' in cache but expected it to have been evicted", fName)
+			delete(i.leafs, fName)
+		} else {
+			i.opts.Logger.Debugf("Deleting file '%s'", f)
+			p := filepath.Join(i.opts.Dir, fName)
+			err := os.Remove(p + CompressedExt)
+			if err != nil {
+				i.opts.Logger.Warnf("Failed to delete file %s: %v", p + CompressedExt, err) //  this shouldn't be fatal
 			}
 		}
 		i.Unlock()
