@@ -209,10 +209,8 @@ func (i *index) addLeaf(path string) (*leaf, error) {
 	l := &leaf{
 		segment: s,
 	}
-	i.Lock()
 	i.leafs[path] = l
 	atomic.StoreInt64(&i.stats.OpenSegments, int64(len(i.leafs)))
-	i.Unlock()
 	i.bf.Add([]byte(path))
 	i.opts.Logger.Debugf("Added new leaf '%s'", path)
 	return l, nil
@@ -226,15 +224,16 @@ func (i *index) Append(path string, data []byte) error {
 		ok  bool
 		err error
 	)
-	i.RLock()
+	i.Lock()
 	l, ok = i.leafs[path]
-	i.RUnlock()
 	if !ok {
 		l, err = i.addLeaf(path)
 		if err != nil {
+			i.Unlock()
 			return err
 		}
 	}
+	i.Unlock()
 	atomic.StoreInt64(&l.lastAccess, time.Now().Unix())
 	i.opts.Logger.Debugf("Updated last access time for segment '%s'", path)
 	l.a.Lock()
@@ -256,15 +255,16 @@ func (i *index) Read(path string, f func(io.Reader)) error {
 		ok  bool
 		err error
 	)
-	i.RLock()
+	i.Lock()
 	l, ok = i.leafs[path]
-	i.RUnlock()
 	if !ok {
 		l, err = i.addLeaf(path)
 		if err != nil {
+			i.Unlock()
 			return err
 		}
 	}
+	i.Unlock()
 	atomic.StoreInt64(&l.lastAccess, time.Now().Unix())
 	i.opts.Logger.Debugf("Updated last access time for segment '%s'", path)
 	l.r.Lock()
